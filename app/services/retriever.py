@@ -1,31 +1,123 @@
-import pickle
-import numpy as np
+import json
+from pathlib import Path
+
 import faiss
+import numpy as np
 
-from sentence_transformers import SentenceTransformer
-
-
-INDEX_PATH = "app/data/faiss_index/shl.index"
-METADATA_PATH = "app/data/faiss_index/metadata.pkl"
-
-
-model = SentenceTransformer(
-    "sentence-transformers/all-MiniLM-L6-v2"
+from sentence_transformers import (
+    SentenceTransformer
 )
 
-index = faiss.read_index(INDEX_PATH)
 
-with open(METADATA_PATH, "rb") as f:
-    metadata = pickle.load(f)
+# ====================================
+# PATHS
+# ====================================
+
+BASE_DIR = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+)
+
+CATALOG_PATH = (
+    BASE_DIR / "data" / "catalog.json"
+)
+
+INDEX_PATH = (
+    BASE_DIR
+    / "data"
+    / "faiss_index"
+    / "index.faiss"
+)
 
 
-def semantic_search(query, top_k=20):
+# ====================================
+# GLOBALS
+# ====================================
 
-    query_embedding = model.encode([query])
+_model = None
+_index = None
+_catalog = None
+
+
+# ====================================
+# LAZY LOAD MODEL
+# ====================================
+
+def get_model():
+
+    global _model
+
+    if _model is None:
+
+        _model = SentenceTransformer(
+            "all-MiniLM-L6-v2"
+        )
+
+    return _model
+
+
+# ====================================
+# LAZY LOAD INDEX
+# ====================================
+
+def get_index():
+
+    global _index
+
+    if _index is None:
+
+        _index = faiss.read_index(
+            str(INDEX_PATH)
+        )
+
+    return _index
+
+
+# ====================================
+# LOAD CATALOG
+# ====================================
+
+def get_catalog():
+
+    global _catalog
+
+    if _catalog is None:
+
+        with open(
+            CATALOG_PATH,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            _catalog = json.load(f)
+
+    return _catalog
+
+
+# ====================================
+# RETRIEVAL
+# ====================================
+
+def retrieve_assessments(
+    query,
+    top_k=10
+):
+
+    model = get_model()
+
+    index = get_index()
+
+    catalog = get_catalog()
+
+    query_embedding = model.encode(
+        [query]
+    )
 
     query_embedding = np.array(
         query_embedding,
-        dtype=np.float32
+        dtype="float32"
     )
 
     distances, indices = index.search(
@@ -35,14 +127,15 @@ def semantic_search(query, top_k=20):
 
     results = []
 
-    for distance, idx in zip(distances[0], indices[0]):
+    for idx in indices[0]:
 
-        if idx < len(metadata):
+        if (
+            idx >= 0
+            and idx < len(catalog)
+        ):
 
-            item = metadata[idx].copy()
-
-            item["semantic_score"] = float(distance)
-
-            results.append(item)
+            results.append(
+                catalog[idx]
+            )
 
     return results
