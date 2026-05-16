@@ -1,13 +1,6 @@
 import json
 from pathlib import Path
 
-import faiss
-import numpy as np
-
-from sentence_transformers import (
-    SentenceTransformer
-)
-
 
 # ====================================
 # PATHS
@@ -24,76 +17,111 @@ CATALOG_PATH = (
     BASE_DIR / "data" / "catalog.json"
 )
 
-INDEX_PATH = (
-    BASE_DIR
-    / "data"
-    / "faiss_index"
-    / "index.faiss"
-)
-
-
-# ====================================
-# GLOBALS
-# ====================================
-
-_model = None
-_index = None
-_catalog = None
-
-
-# ====================================
-# LAZY LOAD MODEL
-# ====================================
-
-def get_model():
-
-    global _model
-
-    if _model is None:
-
-        _model = SentenceTransformer(
-            "all-MiniLM-L6-v2"
-        )
-
-    return _model
-
-
-# ====================================
-# LAZY LOAD INDEX
-# ====================================
-
-def get_index():
-
-    global _index
-
-    if _index is None:
-
-        _index = faiss.read_index(
-            str(INDEX_PATH)
-        )
-
-    return _index
-
 
 # ====================================
 # LOAD CATALOG
 # ====================================
 
-def get_catalog():
+with open(
+    CATALOG_PATH,
+    "r",
+    encoding="utf-8"
+) as f:
 
-    global _catalog
+    catalog = json.load(f)
 
-    if _catalog is None:
 
-        with open(
-            CATALOG_PATH,
-            "r",
-            encoding="utf-8"
-        ) as f:
+# ====================================
+# SCORING
+# ====================================
 
-            _catalog = json.load(f)
+def score_assessment(
+    assessment,
+    query
+):
 
-    return _catalog
+    query = query.lower()
+
+    score = 0
+
+    # =========================
+    # Name Match
+    # =========================
+
+    name = assessment.get(
+        "name",
+        ""
+    ).lower()
+
+    if name in query:
+
+        score += 10
+
+    # =========================
+    # Skills Match
+    # =========================
+
+    skills = assessment.get(
+        "skills",
+        []
+    )
+
+    for skill in skills:
+
+        if skill.lower() in query:
+
+            score += 5
+
+    # =========================
+    # Description Match
+    # =========================
+
+    description = assessment.get(
+        "description",
+        ""
+    ).lower()
+
+    for word in query.split():
+
+        if word in description:
+
+            score += 1
+
+    # =========================
+    # Test Type Boost
+    # =========================
+
+    if "personality" in query:
+
+        if "P" in assessment.get(
+            "test_type",
+            []
+        ):
+
+            score += 5
+
+    if "cognitive" in query:
+
+        if "C" in assessment.get(
+            "test_type",
+            []
+        ):
+
+            score += 5
+
+    if (
+        "technical" in query
+        or "coding" in query
+    ):
+
+        if "T" in assessment.get(
+            "test_type",
+            []
+        ):
+
+            score += 5
+
+    return score
 
 
 # ====================================
@@ -105,37 +133,31 @@ def retrieve_assessments(
     top_k=10
 ):
 
-    model = get_model()
+    scored_results = []
 
-    index = get_index()
+    for assessment in catalog:
 
-    catalog = get_catalog()
+        score = score_assessment(
+            assessment,
+            query
+        )
 
-    query_embedding = model.encode(
-        [query]
-    )
-
-    query_embedding = np.array(
-        query_embedding,
-        dtype="float32"
-    )
-
-    distances, indices = index.search(
-        query_embedding,
-        top_k
-    )
-
-    results = []
-
-    for idx in indices[0]:
-
-        if (
-            idx >= 0
-            and idx < len(catalog)
-        ):
-
-            results.append(
-                catalog[idx]
+        scored_results.append(
+            (
+                score,
+                assessment
             )
+        )
 
-    return results
+    scored_results.sort(
+        key=lambda x: x[0],
+        reverse=True
+    )
+
+    recommendations = [
+        item
+        for score, item
+        in scored_results[:top_k]
+    ]
+
+    return recommendations
