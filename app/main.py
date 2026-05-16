@@ -1,35 +1,9 @@
-# app/main.py
-
 from fastapi import FastAPI
-
-from app.routes.chat import (
-    router as chat_router
-)
-
 
 app = FastAPI(
     title="SHL Assessment Recommender API",
     version="1.0.0"
 )
-
-
-# ====================================
-# Health Endpoint
-# ====================================
-
-@app.get("/health")
-def health_check():
-
-    return {
-        "status": "ok"
-    }
-
-
-# ====================================
-# Chat Routes
-# ====================================
-
-app.include_router(chat_router)
 
 
 # ====================================
@@ -40,14 +14,31 @@ app.include_router(chat_router)
 def root():
 
     return {
-        "message": (
-            "SHL Assessment Recommender API is running"
-        )
+        "message": "API running"
     }
 
 
 # ====================================
-# Vercel Handler
+# Health Endpoint
 # ====================================
 
-handler = app
+@app.get("/health")
+def health():
+
+    return {
+        "status": "ok"
+    }
+
+
+# ====================================
+# IMPORT CHAT ROUTES LAST
+# IMPORTANT:
+# prevents heavy ML loading
+# during startup
+# ====================================
+
+from app.routes.chat import (
+    router as chat_router
+)
+
+app.include_router(chat_router)
